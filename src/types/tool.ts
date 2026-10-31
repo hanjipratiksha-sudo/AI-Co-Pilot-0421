@@ -21,7 +21,7 @@ export interface ToolParameterSchema {
   required?: string[];
 }
 
-export interface ToolDefinition {
+export interface ToolSpec {
   name: string;
   description: string;
   purpose: string;
@@ -31,6 +31,11 @@ export interface ToolDefinition {
   timeoutMs?: number;
   failureBehavior: 'RETRY' | 'ABORT' | 'FALLBACK';
 }
+
+/**
+ * Backward compatibility alias
+ */
+export type ToolDefinition = ToolSpec;
 
 export interface ToolExecutionRequest {
   requestId: string;
@@ -79,9 +84,9 @@ export interface MockToolBehavior {
 }
 
 export interface IToolExecutor {
-  registerTool(tool: ToolDefinition, mockConfig?: MockToolBehavior): void;
-  getTool(toolName: string): ToolDefinition | undefined;
-  listTools(): ToolDefinition[];
+  registerTool(tool: ToolSpec, mockConfig?: MockToolBehavior): void;
+  getTool(toolName: string): ToolSpec | undefined;
+  listTools(): ToolSpec[];
   execute<T = unknown>(request: ToolExecutionRequest): Promise<ToolExecutionResult<T>>;
   configureMock(toolName: string, behavior: MockToolBehavior): void;
   resetMocks(): void;

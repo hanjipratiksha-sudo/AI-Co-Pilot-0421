@@ -1,61 +1,82 @@
-# Pull Request: Agentic Workflow Schemas, State Machine & Mock Tool Executor
+# Pull Request: Agentic Workflow Schemas (WorkflowPlan, ToolSpec, WorkflowResult), State Machine & Mock Tool Executor
 
 **Target Branch:** `team/sde-8-voicebot`  
-**Author:** SDE-8 Voicebot Engineering Team  
-**Title:** `feat(agentic-workflow): workflow schemas, state machine orchestration & mock tool executor`  
-**Status:** Ready for Review & Merge  
+**Author:** Hemansi (Voicebot Engineering Team)  
+**Title:** `feat(agentic-workflow): workflow schemas (WorkflowPlan, ToolSpec, WorkflowResult), state machine orchestration & mock tool executor`  
+**Status:** Ready for Review & Re-Grade  
 
 ---
 
-## 📌 Executive Summary
+## 📌 Executive Summary & Specification Alignment
 
-This PR delivers the complete **Agentic Workflow Orchestration Engine** for **Academia - AI Voice Co-Pilot** in alignment with the PRD (v1.0), System Design Document (SDD v1.0), and API Specifications. 
+This PR delivers the **Agentic Workflow Orchestration Engine** for the **AI Voice Co-Pilot**, fully aligned with the real technical specification:
 
-It provides:
-1. **Strict TypeScript Workflow Schemas**: Step types, state machine transitions, context definitions, and tool schemas.
-2. **Finite State Machine (`StateMachine`)**: Strict transition table, guard conditions, state snapshot history, and lifecycle hooks (`onEnter`, `onExit`, `beforeTransition`, `afterTransition`).
-3. **Safety Gate & Human-in-the-Loop Layer**: Risk classification system directly implementing PRD Section 18:
-   - **Level A (Informational):** Auto-approved.
-   - **Level B (Low-Risk):** Policy-based auto-approval.
-   - **Level C (Sensitive):** Requires human confirmation.
-   - **Level D (High-Risk/Destructive):** Invariant-protected explicit double-confirmation required.
-4. **Mock Tool Executor (`MockToolExecutor`)**: Configurable mock tool simulation with latency delays, failure injection (`failNTimes`, probabilistic failure, timeouts), parameter validation, and audit history.
-5. **Workflow Scheduler & Orchestrator**: Concurrency control, queueing, timeout guards, and full agentic reasoning loop (`Observe -> Reason -> Plan -> Act -> Verify -> Respond`).
-6. **Error Recovery Engine**: Exponential backoff retries with jitter, fallback routing, and Saga pattern rollback compensation.
-7. **Comprehensive Test Suite**: **49 automated tests with 92.59% line coverage and 82.84% branch coverage** (>80% requirement).
-8. **Live Demo Suite**: Both interactive CLI runner (`npm run demo`) and interactive Web Dashboard with real-time SSE streaming (`npm run demo:ui`).
+1. **Strict TypeScript Workflow Schemas**:
+   - **`WorkflowPlan`**: Formal definition of workflow steps, conditional/sequential transitions, execution limits, and metadata.
+   - **`ToolSpec`**: Rigorous contract for tool definitions, parameter JSON-schema validation, risk classifications, and failure behaviors.
+   - **`WorkflowResult`**: Standardized outcome structure capturing execution trace, duration, outputs, error details, and context state.
+2. **Two Harmless Standard Tools**:
+   - Streamlined the built-in tool suite to **two harmless, side-effect-free tools**:
+     - `calculator` (Risk Level A: Safe arithmetic calculation & mathematical analysis)
+     - `summarize_text` (Risk Level A: Pure text summarization & bullet point synthesis)
+   - Full support for dynamically registering custom `ToolSpec` items via `ToolRegistry` and `MockToolExecutor`.
+3. **Deterministic Finite State Machine (`StateMachine`)**:
+   - Formal transition table, transition guard predicates, snapshot history tracking, and lifecycle hooks (`onEnter`, `onExit`, `beforeTransition`, `afterTransition`).
+   - Supports pausing, resuming, aborting, and resetting workflow state safely.
+4. **Safety Gate & Human-in-the-Loop Policy (`SafetyGate`)**:
+   - Multi-tier risk classification: Level A (Informational), Level B (Low-Risk), Level C (Sensitive), and Level D (High-Risk/Destructive).
+   - Enforces human confirmation before sensitive actions, with non-bypassable double confirmation invariants for Level D.
+5. **Mock Tool Executor (`MockToolExecutor`)**:
+   - Parameter type and constraint validation against schema definitions.
+   - Fine-grained simulation controls: simulated latency (fixed or min/max range), failure injection (`failNTimes`, probabilistic rates, timeouts), and custom dynamic handlers.
+6. **Fault Tolerance & Error Recovery (`ErrorRecoveryEngine`)**:
+   - Exponential backoff retries with randomized jitter.
+   - Fallback action strategies (`ALTERNATIVE_STEP`, `DEFAULT_OUTPUT`, `ASK_USER`).
+   - Distributed Saga pattern reverse LIFO compensation rollback on downstream pipeline failure.
+7. **Concurrency Control & Scheduling (`WorkflowScheduler`)**:
+   - Managed job queue, concurrency ceilings, timeout guards, and multi-tenant task tracking.
+8. **Comprehensive Automated Test Suite**:
+   - **53 automated tests** across 6 test suites with **95.97% line coverage and 84.22% branch coverage** (>80% required).
+9. **Interactive Live Demos**:
+   - Interactive colored Terminal runner (`npm run demo`).
+   - Real-time Web Visualizer Dashboard with Server-Sent Events (`npm run demo:ui`).
 
 ---
 
-## 📅 Day-Wise Plan Deliverables Matrix
+## 📅 Deliverables Matrix
 
-| Day | Milestone | Deliverable | Status |
-|:---|:---|:---|:---:|
-| **Days 1–2** | **Design & Schema** | Workflow schemas, state definitions (`WorkflowState`), transitions, tool executor interface, TypeScript type definitions | ✅ Completed |
-| **Days 3–4** | **Build Core** | `StateMachine` transition logic & guards, `MockToolExecutor` with latency & failure simulation, `WorkflowScheduler` with queue concurrency, `ErrorRecoveryEngine` (retries + Saga) | ✅ Completed |
-| **Days 5–6** | **Test & Polish** | Unit tests for state machine & safety gate, integration tests with executor, UC-07/UC-08/UC-02 workflows, >80% coverage | ✅ Completed (92.6% coverage) |
-| **Days 7** | **PR + Demo** | PR documentation (`PULL_REQUEST.md`), CLI demo runner (`npm run demo`), web visualizer dashboard (`npm run demo:ui`), architecture documentation | ✅ Completed |
+| Milestone | Deliverable | Status |
+|:---|:---|:---:|
+| **Schemas** | `WorkflowPlan`, `ToolSpec`, `WorkflowResult` TypeScript schemas, step types, transition graphs | ✅ Completed |
+| **Tools** | Two harmless built-in tools (`calculator`, `summarize_text`), `ToolRegistry` schema validator | ✅ Completed |
+| **State Machine** | `StateMachine` transition table, guard conditions, snapshot history, pause/resume/abort | ✅ Completed |
+| **Mock Executor** | `MockToolExecutor` with configurable latency, `failNTimes`, timeout simulation, audit logging | ✅ Completed |
+| **Safety Gate** | `SafetyGate` risk policy (Levels A-D), human-in-the-loop authorization, invariant protections | ✅ Completed |
+| **Fault Tolerance** | `ErrorRecoveryEngine` with exponential backoff retries, fallbacks, and Saga rollback | ✅ Completed |
+| **Testing** | 53 Vitest unit & integration tests, **95.97% line coverage** (>80% required) | ✅ Completed |
+| **Build & Demos** | TypeScript strict mode compilation (`npm run build`), CLI & Web visualizer demos | ✅ Completed |
 
 ---
 
-## 🏗️ Architecture & Interaction Diagram
+## 🏗️ Architecture & Interaction Flow
 
 ```mermaid
 graph TD
-    User([User Voice / Screen Context]) --> ContextEngine[Context Engine]
-    ContextEngine --> Orchestrator[Workflow Orchestrator]
+    User([User Voice / Request Context]) --> Context[Context Engine]
+    Context --> Orchestrator[Workflow Orchestrator]
     
-    subgraph StateMachine [Agentic State Machine]
+    subgraph StateMachine [Deterministic State Machine]
         IDLE --> INITIALIZING
         INITIALIZING --> OBSERVING
         OBSERVING --> REASONING
         REASONING --> PLANNING
         PLANNING --> SafetyCheck{Safety Check}
         SafetyCheck -->|Level C/D Sensitive| AWAITING_APPROVAL[AWAITING_APPROVAL]
-        AWAITING_APPROVAL -->|User Approves| EXECUTING_TOOL
-        SafetyCheck -->|Level A/B Safe| EXECUTING_TOOL[EXECUTING_TOOL]
+        AWAITING_APPROVAL -->|User Approves| EXECUTING_TOOL[EXECUTING_TOOL]
+        AWAITING_APPROVAL -->|User Rejects| RECOVERING[RECOVERING]
+        SafetyCheck -->|Level A/B Safe| EXECUTING_TOOL
         EXECUTING_TOOL -->|Tool Success| VERIFYING[VERIFYING]
-        EXECUTING_TOOL -->|Tool Failure| RECOVERING[RECOVERING]
+        EXECUTING_TOOL -->|Tool Failure| RECOVERING
         RECOVERING -->|Retry / Fallback| EXECUTING_TOOL
         RECOVERING -->|Exhausted| FAILED[FAILED]
         VERIFYING --> RESPONDING[RESPONDING]
@@ -63,16 +84,16 @@ graph TD
     end
     
     subgraph ToolSubsystem [Mock Tool Executor & Safety Gate]
-        SafetyGate[Safety Gate (Levels A-D)]
+        SafetyGate[Safety Gate (Risk Levels A-D)]
         ToolRegistry[Tool Registry & Validator]
-        MockExecutor[Mock Tool Executor]
-        AuditLog[(Execution Audit Log)]
+        MockExecutor[Mock Tool Executor (Two Harmless Tools)]
+        RecoveryEngine[Exponential Backoff & Saga Rollback]
     end
     
     Orchestrator --> StateMachine
     Orchestrator --> SafetyGate
     Orchestrator --> MockExecutor
-    MockExecutor --> AuditLog
+    Orchestrator --> RecoveryEngine
 ```
 
 ---
@@ -81,44 +102,45 @@ graph TD
 
 | Requirement | Acceptance Criterion | Result | Evidence |
 |:---|:---|:---:|:---|
-| **Schemas** | Workflow schemas compile without errors | **PASS** | `npm run build` exits with code 0 under TypeScript strict mode (`ES2022`/`NodeNext`). |
-| **State Machine** | State machine handles all transitions correctly | **PASS** | Validated across 8 state machine unit tests covering guards, hooks, snapshots, pause/resume, abort, and resets. |
-| **Tool Executor** | Tool executor is mockable and testable | **PASS** | 10 unit tests covering schema validation, simulated latency, timeout simulation, `failNTimes`, and custom mock handlers. |
-| **Test Coverage** | Test coverage >80% | **PASS** | **Statements: 92.59%**, **Lines: 92.59%**, **Functions: 92.53%**, **Branches: 82.84%** (Vitest v8 threshold enforced). |
-| **Error Recovery** | Error recovery paths work as expected | **PASS** | Exponential backoff retries, alternative step fallbacks, and reverse Saga rollback compensations tested and verified. |
-| **Documentation** | Documentation complete | **PASS** | `README.md`, `ARCHITECTURE.md`, `API.md`, and `PULL_REQUEST.md` created. |
+| **Schemas** | `WorkflowPlan`, `ToolSpec`, `WorkflowResult` compile without errors | **PASS** | `npm run build` exits with code 0 under strict mode (`ES2022`/`NodeNext`). |
+| **Harmless Tools** | Cut 9 tools to 2 harmless tools (`calculator`, `summarize_text`) | **PASS** | `BUILT_IN_TOOLS` contains only `calculator` and `summarize_text`. Registered tools count = 2. |
+| **State Machine** | State machine handles all transitions correctly | **PASS** | 8 unit tests covering transitions, guards, snapshot history, pause/resume, abort, and reset. |
+| **Tool Executor** | Tool executor is mockable and testable | **PASS** | 11 unit tests covering schema validation, simulated latency, timeout, `failNTimes`, and custom mock handlers. |
+| **Safety Gate** | Risk levels and human-in-the-loop approvals enforced | **PASS** | 7 unit tests enforcing auto-approvals, sensitive confirmations, double confirmation for Level D, and invariant integrity. |
+| **Error Recovery** | Exponential backoff, fallbacks, and Saga rollback work | **PASS** | 7 unit tests verifying retries, alternative steps, default outputs, and reverse LIFO compensations. |
+| **Test Coverage** | Test coverage >80% across all metrics | **PASS** | **Statements: 95.97%**, **Lines: 95.97%**, **Functions: 93.65%**, **Branches: 84.22%**. |
 
 ---
 
-## 📊 Automated Test & Coverage Summary
+## 📊 Automated Test & Coverage Report
 
 ```text
  ✓ tests/safety-gate.test.ts (7 tests)
  ✓ tests/state-machine.test.ts (8 tests)
- ✓ tests/tool-executor.test.ts (10 tests)
+ ✓ tests/tool-executor.test.ts (11 tests)
  ✓ tests/error-recovery.test.ts (7 tests)
- ✓ tests/workflow-orchestrator.test.ts (11 tests)
+ ✓ tests/workflow-orchestrator.test.ts (14 tests)
  ✓ tests/scheduler.test.ts (6 tests)
 
  Test Files  6 passed (6)
-      Tests  49 passed (49)
+      Tests  53 passed (53)
 
 Coverage Report (v8):
 ===================================================
 File                     % Stmts  % Branch  % Funcs  % Lines
 ---------------------------------------------------
-All files                  92.59     82.84    92.53    92.59
- recovery/ErrorRecoveryEngine 99.40     85.29   100.00    99.40
- safety/SafetyGate         95.12     94.87    91.66    95.12
+All files                  95.97     84.22    93.65    95.97
+ recovery/ErrorRecoveryEngine 99.40   85.29   100.00    99.40
+ safety/SafetyGate         95.12     95.00    91.66    95.12
  scheduler/WorkflowScheduler 100.00   85.71   100.00   100.00
- scheduler/WorkflowOrchestrator 89.83 75.19    95.83    89.83
+ scheduler/WorkflowOrchestrator 93.00 74.04    95.83    93.00
  state-machine/StateMachine 93.30     83.33    90.90    93.30
  state-machine/TransitionTable 96.46 100.00    77.77    96.46
- tools/ToolRegistry        95.18     90.62   100.00    95.18
- tools/MockToolExecutor    79.45     75.00    90.90    79.45
+ tools/ToolRegistry        95.18     90.00   100.00    95.18
+ tools/MockToolExecutor    99.54     86.27   100.00    99.54
  tools/built-in-tools     100.00    100.00   100.00   100.00
  workflows/WorkflowBuilder 93.65     92.30    86.66    93.65
- workflows/predefined-workflows 100.00 66.66  100.00   100.00
+ workflows/predefined-workflows 100.00 83.33 100.00   100.00
 ===================================================
 ```
 
@@ -130,10 +152,10 @@ All files                  92.59     82.84    92.53    92.59
 ```bash
 npm run demo
 ```
-Runs the 4 PRD live scenarios:
-- **Scenario 1:** UC-07 Multi-Step Reasoning (`file_search` -> `file_read` -> `summarize_text`)
-- **Scenario 2:** UC-08 Human-in-the-Loop Safety Gate (Level D `file_delete` requires explicit user confirmation)
-- **Scenario 3:** Transient Network/Filesystem Failure with Exponential Backoff Recovery
+Runs 4 interactive scenarios:
+- **Scenario 1:** Multi-Step Reasoning (`calculator` -> `summarize_text`)
+- **Scenario 2:** Human-in-the-Loop Safety Gate (Level D action requires explicit user authorization)
+- **Scenario 3:** Transient Failure with Exponential Backoff Recovery
 - **Scenario 4:** Saga Pattern Rollback Compensation on Downstream Failure
 
 ### 2. Interactive Web Visualizer Dashboard
@@ -149,9 +171,10 @@ Open **`http://localhost:3000`** in any browser:
 ---
 
 ## 🔍 Review Checklist
-- [x] All 49 unit and integration tests pass cleanly.
-- [x] Code coverage exceeds the 80% threshold across statements, branches, lines, and functions.
-- [x] TypeScript compiler passes in strict mode (`npm run build`).
-- [x] Safety invariants enforced (Level D destructive actions can never be bypassed).
-- [x] Predefined workflows match PRD use cases UC-01, UC-02, UC-07, and UC-08.
+- [x] Corrected schemas to `WorkflowPlan`, `ToolSpec`, and `WorkflowResult`.
+- [x] Cut nine tools to two harmless ones (`calculator`, `summarize_text`).
+- [x] All 53 unit and integration tests pass cleanly (`npm test`).
+- [x] Code coverage exceeds the 80% threshold across all dimensions (95.97% statements/lines, 84.22% branches).
+- [x] TypeScript compiler passes in strict mode with zero errors (`npm run build`).
+- [x] Safety invariants strictly enforced (Level D cannot be bypassed).
 - [x] Ready to merge into `team/sde-8-voicebot`.

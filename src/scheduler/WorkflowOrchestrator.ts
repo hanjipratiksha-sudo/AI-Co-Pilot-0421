@@ -5,13 +5,13 @@
 
 import { EventEmitter } from 'node:events';
 import {
-  WorkflowDefinition,
+  WorkflowPlan,
   WorkflowStep,
   WorkflowTransition,
   WorkflowContext,
   WorkflowState,
   StepType,
-  WorkflowExecutionResult,
+  WorkflowResult,
 } from '../types/workflow.js';
 import { WorkflowEvent } from '../types/state-machine.js';
 import { RiskLevel } from '../types/safety.js';
@@ -88,9 +88,9 @@ export class WorkflowOrchestrator extends EventEmitter {
    * Execute complete workflow from start to finish
    */
   public async executeWorkflow(
-    definition: WorkflowDefinition,
+    definition: WorkflowPlan,
     context: WorkflowContext
-  ): Promise<WorkflowExecutionResult> {
+  ): Promise<WorkflowResult> {
     const startTime = Date.now();
     this.executedCompensations = [];
     this.stateMachine = new StateMachine(context, WorkflowState.IDLE);
@@ -147,7 +147,7 @@ export class WorkflowOrchestrator extends EventEmitter {
       }
 
       const endTime = Date.now();
-      const result: WorkflowExecutionResult = {
+      const result: WorkflowResult = {
         workflowId: context.workflowId,
         finalState: this.stateMachine.getState(),
         success: true,
@@ -183,7 +183,7 @@ export class WorkflowOrchestrator extends EventEmitter {
       }
 
       const endTime = Date.now();
-      const result: WorkflowExecutionResult = {
+      const result: WorkflowResult = {
         workflowId: context.workflowId,
         finalState: this.stateMachine.getState(),
         success: false,

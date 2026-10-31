@@ -1,12 +1,12 @@
 # API Specifications & Interface Contracts
 
-**Product:** Academia AI Voice Co-Pilot  
+**Product:** AI Voice Co-Pilot  
 **Component:** Agentic Workflow & Tool Orchestration Layer  
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 
 ---
 
-## 1. REST API Contracts (Aligned with SDD Section 04)
+## 1. REST API Contracts
 
 ### 1.1 Execute Tool Action
 Requests execution of a registered tool with parameters and safety verification.
@@ -17,14 +17,13 @@ Requests execution of a registered tool with parameters and safety verification.
 #### Request Payload
 ```json
 {
-  "workflow_id": "wf_pdf_summarize",
-  "step_id": "step_read",
-  "tool_name": "file_read",
+  "workflow_id": "wf_calc_summarize",
+  "step_id": "step_calc",
+  "tool_name": "calculator",
   "parameters": {
-    "filePath": "documents/quarterly_report.pdf",
-    "maxBytes": 1048576
+    "expression": "(25 * 4) + 150"
   },
-  "risk_level": "B_LOW_RISK"
+  "risk_level": "A_INFORMATIONAL"
 }
 ```
 
@@ -32,14 +31,13 @@ Requests execution of a registered tool with parameters and safety verification.
 ```json
 {
   "request_id": "req_17932840001",
-  "tool_name": "file_read",
+  "tool_name": "calculator",
   "success": true,
   "data": {
-    "content": "# Quarterly Research Report\nKey Findings: ...",
-    "pages": 14,
-    "mimeType": "application/pdf"
+    "expression": "(25 * 4) + 150",
+    "result": 250
   },
-  "duration_ms": 42,
+  "duration_ms": 12,
   "timestamp": 17932840001
 }
 ```
@@ -49,7 +47,7 @@ Requests execution of a registered tool with parameters and safety verification.
 {
   "error": {
     "code": "PARAM_VALIDATION_ERROR",
-    "message": "Validation failed for tool 'file_read': Missing required parameter 'filePath'",
+    "message": "Validation failed for tool 'calculator': Missing required parameter 'expression'",
     "request_id": "req_17932840002"
   }
 }
@@ -58,7 +56,7 @@ Requests execution of a registered tool with parameters and safety verification.
 ---
 
 ### 1.2 Submit Human Approval Decision
-Submits a user or policy decision for an action paused in `AWAITING_APPROVAL`.
+Submits a user decision for an action paused in `AWAITING_APPROVAL`.
 
 - **Endpoint:** `POST /api/v1/approvals`
 - **Headers:** `Content-Type: application/json`
@@ -66,12 +64,12 @@ Submits a user or policy decision for an action paused in `AWAITING_APPROVAL`.
 #### Request Payload
 ```json
 {
-  "approval_id": "appr_wf_cleanup_step_delete_file_17932840000",
-  "workflow_id": "wf_cleanup",
-  "step_id": "step_delete_file",
+  "approval_id": "appr_wf_action_step_action_17932840000",
+  "workflow_id": "wf_controlled_action",
+  "step_id": "step_action",
   "approved": true,
   "decided_by": "USER",
-  "reason": "User confirmed permanent deletion of temporary cache files"
+  "reason": "User confirmed sensitive action authorization"
 }
 ```
 
@@ -79,8 +77,8 @@ Submits a user or policy decision for an action paused in `AWAITING_APPROVAL`.
 ```json
 {
   "status": "decision_recorded",
-  "approval_id": "appr_wf_cleanup_step_delete_file_17932840000",
-  "workflow_id": "wf_cleanup",
+  "approval_id": "appr_wf_action_step_action_17932840000",
+  "workflow_id": "wf_controlled_action",
   "resumed_state": "EXECUTING_TOOL"
 }
 ```
@@ -89,7 +87,18 @@ Submits a user or policy decision for an action paused in `AWAITING_APPROVAL`.
 
 ## 2. TypeScript Programmatic API
 
-### 2.1 `StateMachine`
+### 2.1 Core Schemas
+- **`WorkflowPlan`**: Formal declaration of steps, transitions, timeout, and execution bounds.
+- **`ToolSpec`**: Specification of tool properties, input schemas, risk classification, and failure policies.
+- **`WorkflowResult`**: Outcome of a completed, failed, or aborted workflow run.
+
+```typescript
+import type { WorkflowPlan, ToolSpec, WorkflowResult } from 'voicebot-agentic-workflow';
+```
+
+---
+
+### 2.2 `StateMachine`
 Manages state machine transitions, guards, snapshot recording, and lifecycle hooks.
 
 ```typescript
@@ -115,7 +124,7 @@ const history = sm.getHistory();
 
 ---
 
-### 2.2 `SafetyGate`
+### 2.3 `SafetyGate`
 Enforces risk boundaries, policy permissions, and approval requirements.
 
 ```typescript
@@ -131,9 +140,9 @@ const gate = new SafetyGate({
 const evalResult = gate.evaluate(
   workflowId,
   stepId,
-  'file_delete',
+  'summarize_text',
   RiskLevel.D_HIGH_RISK_DESTRUCTIVE,
-  { filePath: '/temp/cache.tmp' }
+  { text: 'Sensitive action' }
 );
 
 if (evalResult.requiresApproval) {
@@ -152,16 +161,16 @@ gate.submitDecision({
 
 ---
 
-### 2.3 `MockToolExecutor`
-Executes tool requests with configurable simulated conditions.
+### 2.4 `MockToolExecutor`
+Executes tool requests with configurable simulated conditions for the 2 standard harmless tools (`calculator`, `summarize_text`) and custom registered `ToolSpec` definitions.
 
 ```typescript
-import { MockToolExecutor } from 'voicebot-agentic-workflow';
+import { MockToolExecutor, RiskLevel } from 'voicebot-agentic-workflow';
 
 const executor = new MockToolExecutor();
 
 // Configure simulated behavior
-executor.configureMock('browser_search', {
+executor.configureMock('calculator', {
   simulatedLatencyMs: 50,
   failNTimes: 2, // Fails 2 times before succeeding
   failureErrorCode: 'TRANSIENT_TIMEOUT',
@@ -172,22 +181,22 @@ const result = await executor.execute({
   requestId: 'req_1',
   workflowId: 'wf_1',
   stepId: 's1',
-  toolName: 'browser_search',
-  parameters: { query: 'LangGraph' },
-  riskLevel: RiskLevel.B_LOW_RISK,
+  toolName: 'calculator',
+  parameters: { expression: '42 * 2' },
+  riskLevel: RiskLevel.A_INFORMATIONAL,
 });
 ```
 
 ---
 
-### 2.4 `WorkflowOrchestrator`
+### 2.5 `WorkflowOrchestrator`
 Coordinates multi-step workflow execution across state machine, safety gates, and tools.
 
 ```typescript
-import { WorkflowOrchestrator, createPdfSummarizeWorkflow } from 'voicebot-agentic-workflow';
+import { WorkflowOrchestrator, createCalculationAndSummaryWorkflow } from 'voicebot-agentic-workflow';
 
 const orchestrator = new WorkflowOrchestrator(executor, safetyGate);
-const workflowDef = createPdfSummarizeWorkflow();
+const workflowPlan = createCalculationAndSummaryWorkflow();
 
 // Handle real-time approval events
 orchestrator.on('approvalRequested', (req) => {
@@ -196,6 +205,6 @@ orchestrator.on('approvalRequested', (req) => {
 });
 
 // Execute complete workflow
-const result = await orchestrator.executeWorkflow(workflowDef, context);
+const result: WorkflowResult = await orchestrator.executeWorkflow(workflowPlan, context);
 console.log('Final outputs:', result.outputs);
 ```

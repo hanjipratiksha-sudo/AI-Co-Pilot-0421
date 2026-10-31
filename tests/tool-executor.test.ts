@@ -9,11 +9,10 @@ describe('MockToolExecutor and ToolRegistry', () => {
     const executor = new MockToolExecutor();
     const tools = executor.listTools();
 
-    expect(tools.length).toBeGreaterThanOrEqual(8);
-    expect(executor.getTool('file_search')).toBeDefined();
-    expect(executor.getTool('ocr_extract')).toBeDefined();
+    // Exactly 2 harmless built-in tools
+    expect(tools.length).toBe(2);
+    expect(executor.getTool('calculator')).toBeDefined();
     expect(executor.getTool('summarize_text')).toBeDefined();
-    expect(executor.getTool('file_delete')).toBeDefined();
   });
 
   it('should execute standard tool with valid parameters successfully', async () => {
@@ -22,15 +21,15 @@ describe('MockToolExecutor and ToolRegistry', () => {
       requestId: 'req_1',
       workflowId: 'wf_1',
       stepId: 'step_1',
-      toolName: 'file_search',
-      parameters: { pattern: '*.pdf' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'calculator',
+      parameters: { expression: '15 + 25' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     };
 
-    const res = await executor.execute<{ files: string[]; matchCount: number }>(req);
+    const res = await executor.execute<{ expression: string; result: number }>(req);
 
     expect(res.success).toBe(true);
-    expect(res.data?.files).toContain('documents/quarterly_report.pdf');
+    expect(res.data?.result).toBe(40);
     expect(executor.getExecutionHistory().length).toBe(1);
   });
 
@@ -40,16 +39,16 @@ describe('MockToolExecutor and ToolRegistry', () => {
       requestId: 'req_2',
       workflowId: 'wf_1',
       stepId: 'step_2',
-      toolName: 'file_read',
-      parameters: {}, // missing required filePath
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'calculator',
+      parameters: {}, // missing required expression
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     };
 
     const res = await executor.execute(req);
 
     expect(res.success).toBe(false);
     expect(res.error?.code).toBe('PARAM_VALIDATION_ERROR');
-    expect(res.error?.message).toContain("Missing required parameter 'filePath'");
+    expect(res.error?.message).toContain("Missing required parameter 'expression'");
   });
 
   it('should fail with PARAM_VALIDATION_ERROR on type mismatch', async () => {
@@ -72,7 +71,7 @@ describe('MockToolExecutor and ToolRegistry', () => {
 
   it('should simulate transient failures with failNTimes counter', async () => {
     const executor = new MockToolExecutor();
-    executor.configureMock('browser_search', {
+    executor.configureMock('summarize_text', {
       failNTimes: 2,
       failureErrorCode: 'TRANSIENT_GATEWAY_TIMEOUT',
       failureErrorMessage: 'Simulated 504 Gateway Timeout',
@@ -81,10 +80,10 @@ describe('MockToolExecutor and ToolRegistry', () => {
     const createReq = (id: string): ToolExecutionRequest => ({
       requestId: id,
       workflowId: 'wf_test',
-      stepId: 'step_search',
-      toolName: 'browser_search',
-      parameters: { query: 'state machine' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      stepId: 'step_summary',
+      toolName: 'summarize_text',
+      parameters: { text: 'Testing transient state machine error handling' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     });
 
     // 1st attempt -> Fails
@@ -104,7 +103,7 @@ describe('MockToolExecutor and ToolRegistry', () => {
 
   it('should simulate tool timeout', async () => {
     const executor = new MockToolExecutor();
-    executor.configureMock('file_search', {
+    executor.configureMock('calculator', {
       simulateTimeout: true,
     });
 
@@ -112,9 +111,9 @@ describe('MockToolExecutor and ToolRegistry', () => {
       requestId: 'r_timeout',
       workflowId: 'wf_1',
       stepId: 's1',
-      toolName: 'file_search',
-      parameters: { pattern: '*' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'calculator',
+      parameters: { expression: '100 * 2' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     });
 
     expect(res.success).toBe(false);
@@ -146,7 +145,7 @@ describe('MockToolExecutor and ToolRegistry', () => {
 
   it('should simulate latency delays', async () => {
     const executor = new MockToolExecutor();
-    executor.configureMock('file_read', {
+    executor.configureMock('summarize_text', {
       simulatedLatencyMs: 30,
     });
 
@@ -155,9 +154,9 @@ describe('MockToolExecutor and ToolRegistry', () => {
       requestId: 'r_lat',
       workflowId: 'wf_1',
       stepId: 's1',
-      toolName: 'file_read',
-      parameters: { filePath: 'notes.txt' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'summarize_text',
+      parameters: { text: 'Sample text to summarize with delay' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     });
     const elapsed = Date.now() - t0;
 
@@ -170,54 +169,10 @@ describe('MockToolExecutor and ToolRegistry', () => {
     expect(() => registry.require('non_existent')).toThrow();
   });
 
-  it('should cover all default mock handlers', async () => {
+  it('should cover all default mock handlers for the two harmless tools', async () => {
     const executor = new MockToolExecutor();
 
-    // OCR extract
-    const rOcr = await executor.execute({
-      requestId: 'r_ocr',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'ocr_extract',
-      parameters: { region: 'active_window' },
-      riskLevel: RiskLevel.A_INFORMATIONAL,
-    });
-    expect(rOcr.success).toBe(true);
-
-    // Code analyze
-    const rCode = await executor.execute({
-      requestId: 'r_code',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'code_analyze',
-      parameters: { errorMessage: 'import missing' },
-      riskLevel: RiskLevel.A_INFORMATIONAL,
-    });
-    expect(rCode.success).toBe(true);
-
-    // File modify
-    const rMod = await executor.execute({
-      requestId: 'r_mod',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'file_modify',
-      parameters: { filePath: 'foo.ts', content: 'bar' },
-      riskLevel: RiskLevel.C_SENSITIVE,
-    });
-    expect(rMod.success).toBe(true);
-
-    // File delete
-    const rDel = await executor.execute({
-      requestId: 'r_del',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'file_delete',
-      parameters: { filePath: 'foo.tmp' },
-      riskLevel: RiskLevel.D_HIGH_RISK_DESTRUCTIVE,
-    });
-    expect(rDel.success).toBe(true);
-
-    // Calculator
+    // 1. Calculator default handler
     const rCalc = await executor.execute({
       requestId: 'r_calc_default',
       workflowId: 'wf',
@@ -227,6 +182,17 @@ describe('MockToolExecutor and ToolRegistry', () => {
       riskLevel: RiskLevel.A_INFORMATIONAL,
     });
     expect(rCalc.success).toBe(true);
+
+    // 2. Summarize text default handler
+    const rSumm = await executor.execute({
+      requestId: 'r_summ_default',
+      workflowId: 'wf',
+      stepId: 's',
+      toolName: 'summarize_text',
+      parameters: { text: 'Antigravity AI Agent Framework and tooling' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
+    });
+    expect(rSumm.success).toBe(true);
 
     // Clear history & reset mocks
     executor.clearHistory();
@@ -239,21 +205,21 @@ describe('MockToolExecutor and ToolRegistry', () => {
     const executor = new MockToolExecutor();
 
     // 1. Min/Max Latency Range
-    executor.configureMock('file_search', {
+    executor.configureMock('calculator', {
       simulatedLatencyMs: { min: 2, max: 6 },
     });
     const rLatency = await executor.execute({
       requestId: 'r_range',
       workflowId: 'wf',
       stepId: 's',
-      toolName: 'file_search',
-      parameters: { pattern: '*.txt' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'calculator',
+      parameters: { expression: '2 + 3' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     });
     expect(rLatency.success).toBe(true);
 
     // 2. Probabilistic failureRate = 1.0
-    executor.configureMock('browser_search', {
+    executor.configureMock('summarize_text', {
       failureRate: 1.0,
       failureErrorCode: 'PROB_ERROR',
       failureErrorMessage: 'Random crash',
@@ -262,9 +228,9 @@ describe('MockToolExecutor and ToolRegistry', () => {
       requestId: 'r_prob',
       workflowId: 'wf',
       stepId: 's',
-      toolName: 'browser_search',
-      parameters: { query: 'test' },
-      riskLevel: RiskLevel.B_LOW_RISK,
+      toolName: 'summarize_text',
+      parameters: { text: 'test content' },
+      riskLevel: RiskLevel.A_INFORMATIONAL,
     });
     expect(rProb.success).toBe(false);
     expect(rProb.error?.code).toBe('PROB_ERROR');
@@ -286,29 +252,8 @@ describe('MockToolExecutor and ToolRegistry', () => {
     expect(rException.success).toBe(false);
     expect(rException.error?.code).toBe('EXECUTION_EXCEPTION');
 
-    // 4. Non-pdf file reading and default browser search
+    // 4. Reset mocks and test invalid calculator expression
     executor.resetMocks();
-    const rTxt = await executor.execute({
-      requestId: 'r_txt',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'file_read',
-      parameters: { filePath: 'app.txt' },
-      riskLevel: RiskLevel.B_LOW_RISK,
-    });
-    expect(rTxt.success).toBe(true);
-
-    const rSearch = await executor.execute({
-      requestId: 'r_srch',
-      workflowId: 'wf',
-      stepId: 's',
-      toolName: 'browser_search',
-      parameters: { query: 'patterns' },
-      riskLevel: RiskLevel.B_LOW_RISK,
-    });
-    expect(rSearch.success).toBe(true);
-
-    // 5. Invalid calculator expression
     const rInvalidCalc = await executor.execute<{ result: number }>({
       requestId: 'r_inv_calc',
       workflowId: 'wf',
@@ -320,7 +265,7 @@ describe('MockToolExecutor and ToolRegistry', () => {
     expect(rInvalidCalc.success).toBe(true);
     expect(rInvalidCalc.data?.result).toBe(0);
 
-    // 6. Register custom tool
+    // 5. Register custom ToolSpec
     executor.registerTool(
       {
         name: 'custom_echo',

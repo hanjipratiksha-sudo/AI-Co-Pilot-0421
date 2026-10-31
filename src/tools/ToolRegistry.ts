@@ -3,7 +3,7 @@
  * Validates tool signatures, parameter types, and constraints
  */
 
-import { ToolDefinition } from '../types/tool.js';
+import { ToolSpec } from '../types/tool.js';
 import { BUILT_IN_TOOLS } from './built-in-tools.js';
 
 export class ToolNotFoundError extends Error {
@@ -24,7 +24,7 @@ export class ToolParameterValidationError extends Error {
 }
 
 export class ToolRegistry {
-  private tools: Map<string, ToolDefinition> = new Map();
+  private tools: Map<string, ToolSpec> = new Map();
 
   constructor(loadBuiltIns = true) {
     if (loadBuiltIns) {
@@ -38,15 +38,15 @@ export class ToolRegistry {
     }
   }
 
-  public register(tool: ToolDefinition): void {
+  public register(tool: ToolSpec): void {
     this.tools.set(tool.name, tool);
   }
 
-  public get(name: string): ToolDefinition | undefined {
+  public get(name: string): ToolSpec | undefined {
     return this.tools.get(name);
   }
 
-  public require(name: string): ToolDefinition {
+  public require(name: string): ToolSpec {
     const tool = this.get(name);
     if (!tool) {
       throw new ToolNotFoundError(name);
@@ -58,7 +58,7 @@ export class ToolRegistry {
     return this.tools.has(name);
   }
 
-  public list(): ToolDefinition[] {
+  public list(): ToolSpec[] {
     return Array.from(this.tools.values());
   }
 

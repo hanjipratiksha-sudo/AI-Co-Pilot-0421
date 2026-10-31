@@ -5,8 +5,8 @@
 
 import { EventEmitter } from 'node:events';
 import {
-  WorkflowDefinition,
-  WorkflowExecutionResult,
+  WorkflowPlan,
+  WorkflowResult,
   WorkflowContext,
   WorkflowState,
 } from '../types/workflow.js';
@@ -19,16 +19,16 @@ export interface SchedulerOptions {
 
 export interface QueuedWorkflow {
   id: string;
-  definition: WorkflowDefinition;
+  definition: WorkflowPlan;
   context: WorkflowContext;
   orchestrator: WorkflowOrchestrator;
   status: 'QUEUED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'ABORTED';
   enqueuedAt: number;
   startedAt?: number;
   completedAt?: number;
-  result?: WorkflowExecutionResult;
-  promise: Promise<WorkflowExecutionResult>;
-  resolve: (res: WorkflowExecutionResult) => void;
+  result?: WorkflowResult;
+  promise: Promise<WorkflowResult>;
+  resolve: (res: WorkflowResult) => void;
   reject: (err: unknown) => void;
 }
 
@@ -49,14 +49,14 @@ export class WorkflowScheduler extends EventEmitter {
    * Enqueue a workflow for managed execution
    */
   public enqueue(
-    definition: WorkflowDefinition,
+    definition: WorkflowPlan,
     context: WorkflowContext,
     orchestrator: WorkflowOrchestrator
-  ): Promise<WorkflowExecutionResult> {
-    let resolveFn!: (res: WorkflowExecutionResult) => void;
+  ): Promise<WorkflowResult> {
+    let resolveFn!: (res: WorkflowResult) => void;
     let rejectFn!: (err: unknown) => void;
 
-    const promise = new Promise<WorkflowExecutionResult>((res, rej) => {
+    const promise = new Promise<WorkflowResult>((res, rej) => {
       resolveFn = res;
       rejectFn = rej;
     });
@@ -133,7 +133,7 @@ export class WorkflowScheduler extends EventEmitter {
       this.runningWorkflows.delete(item.id);
       this.completedWorkflows.set(item.id, item);
 
-      const errorResult: WorkflowExecutionResult = {
+      const errorResult: WorkflowResult = {
         workflowId: item.id,
         finalState: WorkflowState.FAILED,
         success: false,

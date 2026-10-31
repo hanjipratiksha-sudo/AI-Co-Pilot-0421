@@ -146,9 +146,9 @@ export interface WorkflowStep {
 }
 
 /**
- * Top-level Workflow Definition Schema
+ * Top-level Workflow Plan Schema
  */
-export interface WorkflowDefinition {
+export interface WorkflowPlan {
   id: string;
   name: string;
   version: string;
@@ -162,9 +162,14 @@ export interface WorkflowDefinition {
 }
 
 /**
+ * Backward compatibility alias
+ */
+export type WorkflowDefinition = WorkflowPlan;
+
+/**
  * Result of executing an entire workflow
  */
-export interface WorkflowExecutionResult {
+export interface WorkflowResult {
   workflowId: string;
   finalState: WorkflowState;
   success: boolean;
@@ -181,3 +186,8 @@ export interface WorkflowExecutionResult {
   };
   context: WorkflowContext;
 }
+
+/**
+ * Backward compatibility alias
+ */
+export type WorkflowExecutionResult = WorkflowResult;

@@ -7,8 +7,8 @@ import { WorkflowOrchestrator } from '../scheduler/WorkflowOrchestrator.js';
 import { MockToolExecutor } from '../tools/MockToolExecutor.js';
 import { SafetyGate } from '../safety/SafetyGate.js';
 import {
-  createPdfSummarizeWorkflow,
-  createControlledFileCleanupWorkflow,
+  createCalculationAndSummaryWorkflow,
+  createControlledActionWorkflow,
 } from '../workflows/predefined-workflows.js';
 import { WorkflowBuilder } from '../workflows/WorkflowBuilder.js';
 import { type WorkflowContext } from '../types/workflow.js';
@@ -41,9 +41,9 @@ function createContext(id: string, query: string, intent: string): WorkflowConte
       timestamp: Date.now(),
     },
     appContext: {
-      activeApplication: 'VS Code - Academia AI Co-Pilot',
+      activeApplication: 'Voicebot Workspace',
       windowTitle: 'voicebot-agentic-workflow',
-      visibleContent: 'PRD and System Design Document open in editor buffer',
+      visibleContent: 'Computational data and text context loaded',
     },
     stepResults: {},
     variables: {},
@@ -54,13 +54,13 @@ function createContext(id: string, query: string, intent: string): WorkflowConte
   };
 }
 
-async function runScenario1_PdfSummarize() {
-  banner('SCENARIO 1: Multi-Step Reasoning Workflow (UC-07)\n"Find my project report, summarize it, and give me key points"');
+async function runScenario1_CalcSummarize() {
+  banner('SCENARIO 1: Multi-Step Reasoning Workflow\n"Compute key project metrics and summarize findings"');
 
   const executor = new MockToolExecutor();
   const orchestrator = new WorkflowOrchestrator(executor);
-  const def = createPdfSummarizeWorkflow();
-  const ctx = createContext('wf_demo_pdf', 'Find my project report and summarize it', 'summarize_pdf');
+  const def = createCalculationAndSummaryWorkflow();
+  const ctx = createContext('wf_demo_calc', 'Compute metrics and generate summary', 'calc_and_summarize');
 
   orchestrator.on('stateTransition', (d) => {
     console.log(`  [State Machine] ${magenta}${d.from}${reset} ──(${d.event})──▶ ${bold}${green}${d.to}${reset}`);
@@ -80,13 +80,13 @@ async function runScenario1_PdfSummarize() {
 }
 
 async function runScenario2_SafetyGateApproval() {
-  banner('SCENARIO 2: Safety Gate Human-in-the-Loop Approval (UC-08)\n"Delete obsolete temporary files" -> Category D Destructive Action');
+  banner('SCENARIO 2: Safety Gate Human-in-the-Loop Approval\n"Authorize sensitive action" -> Category D Destructive Action');
 
   const executor = new MockToolExecutor();
   const safetyGate = new SafetyGate();
   const orchestrator = new WorkflowOrchestrator(executor, safetyGate);
-  const def = createControlledFileCleanupWorkflow();
-  const ctx = createContext('wf_demo_safety', 'Clean up temporary files', 'delete_temp_files');
+  const def = createControlledActionWorkflow();
+  const ctx = createContext('wf_demo_safety', 'Execute controlled action', 'controlled_action');
 
   orchestrator.on('stateTransition', (d) => {
     console.log(`  [State Machine] ${magenta}${d.from}${reset} ──(${d.event})──▶ ${bold}${green}${d.to}${reset}`);
@@ -109,17 +109,17 @@ async function runScenario2_SafetyGateApproval() {
 
   console.log(`\n${bold}${green}✔ Workflow Completed with User Authorization!${reset}`);
   console.log(`  Final State: ${bold}${result.finalState}${reset}`);
-  console.log(`  Step Results:`, ctx.stepResults.step_delete_file);
+  console.log(`  Step Results:`, ctx.stepResults.step_action);
 }
 
 async function runScenario3_TransientFailureAndExponentialBackoff() {
-  banner('SCENARIO 3: Fault Tolerance & Exponential Backoff Recovery\nSimulating 2 consecutive network/filesystem timeouts before recovery');
+  banner('SCENARIO 3: Fault Tolerance & Exponential Backoff Recovery\nSimulating 2 consecutive transient timeouts before recovery');
 
   const executor = new MockToolExecutor();
-  executor.configureMock('browser_search', {
+  executor.configureMock('calculator', {
     failNTimes: 2,
-    failureErrorCode: 'HTTP_504_GATEWAY_TIMEOUT',
-    failureErrorMessage: 'Simulated Gateway Timeout while querying remote docs',
+    failureErrorCode: 'TRANSIENT_COMPUTE_BUSY',
+    failureErrorMessage: 'Simulated temporary engine busy error',
   });
 
   const orchestrator = new WorkflowOrchestrator(executor);
@@ -128,53 +128,52 @@ async function runScenario3_TransientFailureAndExponentialBackoff() {
   });
 
   const builder = new WorkflowBuilder('wf_demo_retry', 'Retry Demo')
-    .addReasoningStep('step_rsn', 'Reasoning about query')
+    .addReasoningStep('step_rsn', 'Reasoning about computation')
     .addPlanningStep('step_pln', 'Planning tool call')
-    .addToolStep('step_search', 'Online Search', 'browser_search', { query: 'LangGraph architecture' }, {
-      riskLevel: RiskLevel.B_LOW_RISK,
+    .addToolStep('step_calc', 'Calculate Result', 'calculator', { expression: '125 * 8' }, {
+      riskLevel: RiskLevel.A_INFORMATIONAL,
       retryPolicy: { maxAttempts: 3, backoffMs: 80, backoffMultiplier: 2 },
     })
     .addResponseStep('step_resp', 'Formulate Response')
     .addSequentialTransitions();
 
-  const ctx = createContext('wf_demo_retry', 'Search LangGraph architecture', 'browser_search');
+  const ctx = createContext('wf_demo_retry', 'Compute expression with retry', 'calc_retry');
   const result = await orchestrator.executeWorkflow(builder.build(), ctx);
 
   console.log(`\n${bold}${green}✔ Recovered and Finished via Exponential Backoff!${reset}`);
-  console.log(`  Total Attempts: ${ctx.attemptsPerStep.step_search}`);
+  console.log(`  Total Attempts: ${ctx.attemptsPerStep.step_calc}`);
   console.log(`  Final State: ${result.finalState}`);
 }
 
 async function runScenario4_SagaRollbackCompensation() {
-  banner('SCENARIO 4: Saga Rollback Compensation\nStep 1 creates resource, Step 2 encounters fatal error -> Compensation executes undo');
+  banner('SCENARIO 4: Saga Rollback Compensation\nStep 1 executes calculation, Step 2 encounters fatal error -> Compensation executes undo');
 
   const executor = new MockToolExecutor();
   let rollbackExecuted = false;
 
-  executor.configureMock('file_delete', {
+  executor.configureMock('comp_revert', {
     mockHandler: (p) => {
       rollbackExecuted = true;
-      console.log(`  ${red}${bold}↺ SAGA COMPENSATION EXECUTED:${reset} Deleted scratch artifact '${p.filePath}'`);
-      return { deleted: true };
+      console.log(`  ${red}${bold}↺ SAGA COMPENSATION EXECUTED:${reset} Reverted state: ${JSON.stringify(p)}`);
+      return { reverted: true };
     },
   });
 
   executor.configureMock('summarize_text', {
     failNTimes: 10,
-    failureErrorMessage: 'Simulated critical parsing crash',
+    failureErrorMessage: 'Simulated critical text synthesis crash',
   });
 
   const builder = new WorkflowBuilder('wf_demo_saga', 'Saga Demo')
-    .addToolStep('step_create', 'Create Temporary Cache', 'file_modify', {
-      filePath: 'scratch/temp_data.bin',
-      content: 'binary_data',
+    .addToolStep('step_calc_1', 'Compute Initial Metric', 'calculator', {
+      expression: '42 * 10',
     }, {
-      riskLevel: RiskLevel.B_LOW_RISK,
+      riskLevel: RiskLevel.A_INFORMATIONAL,
       compensationAction: {
         id: 'comp_cleanup',
-        description: 'Rollback temp artifact on failure',
-        toolName: 'file_delete',
-        parameters: { filePath: 'scratch/temp_data.bin' },
+        description: 'Revert metric state on failure',
+        toolName: 'comp_revert',
+        parameters: { metric: 'initial_score' },
         runOnFailureOnly: true,
       },
     })
@@ -184,7 +183,7 @@ async function runScenario4_SagaRollbackCompensation() {
     .addSequentialTransitions();
 
   const orchestrator = new WorkflowOrchestrator(executor);
-  const ctx = createContext('wf_demo_saga', 'Process file with compensation', 'saga_test');
+  const ctx = createContext('wf_demo_saga', 'Process calculation with compensation', 'saga_test');
   const result = await orchestrator.executeWorkflow(builder.build(), ctx);
 
   console.log(`\n${bold}${yellow}Workflow Handled Downstream Failure Graciously:${reset}`);
@@ -194,11 +193,11 @@ async function runScenario4_SagaRollbackCompensation() {
 
 async function main() {
   console.log(`${bold}${magenta}========================================================================${reset}`);
-  console.log(`${bold}${cyan}  Academia AI Voice Co-Pilot - SDE-8 Agentic Workflow System Demo${reset}`);
+  console.log(`${bold}${cyan}  Agentic Workflow System Demo — Real Specification Edition${reset}`);
   console.log(`${bold}${magenta}========================================================================${reset}`);
 
   try {
-    await runScenario1_PdfSummarize();
+    await runScenario1_CalcSummarize();
     await runScenario2_SafetyGateApproval();
     await runScenario3_TransientFailureAndExponentialBackoff();
     await runScenario4_SagaRollbackCompensation();

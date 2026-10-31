@@ -5,11 +5,12 @@
 
 import {
   IToolExecutor,
-  ToolDefinition,
+  ToolSpec,
   ToolExecutionRequest,
   ToolExecutionResult,
   MockToolBehavior,
 } from '../types/tool.js';
+import { RiskLevel } from '../types/safety.js';
 import { ToolRegistry } from './ToolRegistry.js';
 
 export class MockToolExecutor implements IToolExecutor {
@@ -27,23 +28,33 @@ export class MockToolExecutor implements IToolExecutor {
     return this.registry;
   }
 
-  public registerTool(tool: ToolDefinition, mockConfig?: MockToolBehavior): void {
+  public registerTool(tool: ToolSpec, mockConfig?: MockToolBehavior): void {
     this.registry.register(tool);
     if (mockConfig) {
       this.configureMock(tool.name, mockConfig);
     }
   }
 
-  public getTool(toolName: string): ToolDefinition | undefined {
+  public getTool(toolName: string): ToolSpec | undefined {
     return this.registry.get(toolName);
   }
 
-  public listTools(): ToolDefinition[] {
+  public listTools(): ToolSpec[] {
     return this.registry.list();
   }
 
   public configureMock(toolName: string, behavior: MockToolBehavior): void {
     this.mockBehaviors.set(toolName, { ...behavior });
+    if (!this.registry.has(toolName)) {
+      this.registry.register({
+        name: toolName,
+        description: `Mock simulated tool for ${toolName}`,
+        purpose: 'Simulation and testing',
+        riskLevel: RiskLevel.A_INFORMATIONAL,
+        parameters: { type: 'object', properties: {} },
+        failureBehavior: 'RETRY',
+      });
+    }
     // Reset failure counter if failNTimes is configured
     if (behavior.failNTimes !== undefined) {
       this.failureCounters.set(toolName, behavior.failNTimes);
@@ -213,38 +224,16 @@ export class MockToolExecutor implements IToolExecutor {
   }
 
   private setupDefaultMockHandlers(): void {
-    this.configureMock('file_search', {
+    this.configureMock('calculator', {
       mockHandler: (params) => {
-        const pattern = String(params.pattern ?? '*');
-        if (pattern.includes('.pdf') || pattern.includes('report')) {
-          return {
-            files: ['documents/quarterly_report.pdf', 'research/ai_copilot_specs.pdf'],
-            matchCount: 2,
-          };
+        const expr = String(params.expression ?? '0');
+        try {
+          const cleanExpr = expr.replace(/[^0-9+\-*/().]/g, '');
+          const result = Function(`"use strict"; return (${cleanExpr})`)();
+          return { expression: expr, result };
+        } catch {
+          return { expression: expr, result: 0 };
         }
-        return {
-          files: ['src/index.ts', 'src/app.ts', 'tests/app.test.ts'],
-          matchCount: 3,
-        };
-      },
-    });
-
-    this.configureMock('file_read', {
-      mockHandler: (params) => {
-        const filePath = String(params.filePath ?? 'unknown');
-        if (filePath.endsWith('.pdf')) {
-          return {
-            content:
-              '# Quarterly Research Report\nKey Findings: Multimodal voice interaction with screen context increases developer task completion speed by 42%. Safety gates prevent unintended destructive actions.',
-            pages: 14,
-            mimeType: 'application/pdf',
-          };
-        }
-        return {
-          content: 'export const status = "operational";\nconsole.log("System initialized");',
-          lines: 2,
-          mimeType: 'text/plain',
-        };
       },
     });
 
@@ -255,83 +244,12 @@ export class MockToolExecutor implements IToolExecutor {
         return {
           summary: [
             'Context-aware AI voice co-pilot improves productivity without context switching.',
-            'Safety gates classify actions from Level A (informational) to Level D (destructive).',
-            'Robust agentic state machine orchestrates multi-step reasoning workflows.',
+            'Safety gates classify actions and enforce human-in-the-loop authorization.',
+            'Deterministic state machine orchestrates multi-step agentic workflows.',
           ].slice(0, maxPoints),
           sourceLength: text.length,
           compressedRatio: 0.28,
         };
-      },
-    });
-
-    this.configureMock('code_analyze', {
-      mockHandler: (params) => {
-        const error = String(params.errorMessage ?? '');
-        return {
-          diagnosis: `Identified issue: ${error.includes('import') ? 'Missing module import' : 'Syntax or type mismatch'}`,
-          probableCause: 'Referenced identifier is not exported from the module',
-          suggestedFix: 'Add the missing named export in the target source file',
-          confidence: 0.94,
-        };
-      },
-    });
-
-    this.configureMock('browser_search', {
-      mockHandler: (params) => {
-        const query = String(params.query ?? '');
-        return {
-          query,
-          results: [
-            { title: 'TypeScript State Machine Patterns', url: 'https://docs.example.com/fsm' },
-            { title: 'LangGraph and Agentic Workflows Guide', url: 'https://example.com/agents' },
-          ],
-        };
-      },
-    });
-
-    this.configureMock('file_modify', {
-      mockHandler: (params) => {
-        return {
-          modified: true,
-          filePath: params.filePath,
-          bytesWritten: String(params.content ?? '').length,
-          timestamp: Date.now(),
-        };
-      },
-    });
-
-    this.configureMock('file_delete', {
-      mockHandler: (params) => {
-        return {
-          deleted: true,
-          filePath: params.filePath,
-          timestamp: Date.now(),
-        };
-      },
-    });
-
-    this.configureMock('ocr_extract', {
-      mockHandler: (params) => {
-        return {
-          region: params.region ?? 'active_window',
-          extractedText: 'TypeError: Cannot read properties of undefined (reading "execute")',
-          confidence: 0.98,
-        };
-      },
-    });
-
-    this.configureMock('calculator', {
-      mockHandler: (params) => {
-        const expr = String(params.expression ?? '0');
-        // Simple safe numeric evaluation
-        try {
-          // eslint-disable-next-line no-eval
-          const cleanExpr = expr.replace(/[^0-9+\-*/().]/g, '');
-          const result = Function(`"use strict"; return (${cleanExpr})`)();
-          return { expression: expr, result };
-        } catch {
-          return { expression: expr, result: 0 };
-        }
       },
     });
   }

@@ -4,7 +4,7 @@
  */
 
 import {
-  type WorkflowDefinition,
+  type WorkflowPlan,
   type WorkflowStep,
   StepType,
   type StepCondition,
@@ -13,7 +13,7 @@ import type { RiskLevel } from '../types/safety.js';
 import type { RetryPolicy, FallbackAction, CompensationAction } from '../types/error-recovery.js';
 
 export class WorkflowBuilder {
-  private definition: WorkflowDefinition;
+  private definition: WorkflowPlan;
 
   constructor(id: string, name: string, description = '') {
     this.definition = {
@@ -148,7 +148,7 @@ export class WorkflowBuilder {
     return this;
   }
 
-  public build(): WorkflowDefinition {
+  public build(): WorkflowPlan {
     if (!this.definition.initialStepId && this.definition.steps.length > 0) {
       this.definition.initialStepId = this.definition.steps[0]!.id;
     }

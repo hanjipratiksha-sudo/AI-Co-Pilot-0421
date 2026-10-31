@@ -107,22 +107,22 @@ async function runWorkflowById(workflowType: string) {
       break;
 
     case 'retry_demo':
-      toolExecutor.configureMock('browser_search', {
+      toolExecutor.configureMock('calculator', {
         failNTimes: 2,
-        failureErrorCode: 'TRANSIENT_TIMEOUT',
-        failureErrorMessage: 'Simulated 504 Gateway Timeout',
+        failureErrorCode: 'TRANSIENT_COMPUTE_BUSY',
+        failureErrorMessage: 'Simulated 503 Service Unavailable',
       });
       definition = new WorkflowBuilder('wf_retry', 'Retry Demo')
         .addReasoningStep('step_rsn', 'Reasoning')
         .addPlanningStep('step_pln', 'Planning')
-        .addToolStep('step_search', 'Online Search', 'browser_search', { query: 'State machine' }, {
-          riskLevel: RiskLevel.B_LOW_RISK,
+        .addToolStep('step_calc', 'Compute Metric', 'calculator', { expression: '50 * 4' }, {
+          riskLevel: RiskLevel.A_INFORMATIONAL,
           retryPolicy: { maxAttempts: 3, backoffMs: 80, backoffMultiplier: 2 },
         })
         .addResponseStep('step_resp', 'Formulate Response')
         .addSequentialTransitions()
         .build();
-      activeContext = createRequestContext('wf_retry', 'Fault Tolerance', 'Search documentation');
+      activeContext = createRequestContext('wf_retry', 'Fault Tolerance', 'Compute expression with retry');
       break;
 
     default:
