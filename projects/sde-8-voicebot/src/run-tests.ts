@@ -12,6 +12,25 @@ import {
   ReasoningResultSchema 
 } from './schemas/reasoning.schema';
 
+import {
+  OptInCaptureAdapter,
+  CaptureNotOptedInError,
+  RealScreenshotNotAllowedError,
+  SamplingRateExceededError,
+  FrameSizeExceededError,
+  FrameDimensionExceededError
+} from './capture/capture.adapter';
+import { MockOcrVisionAdapter } from './capture/ocr-vision.adapter';
+import { BoundedContextBuilder } from './builder/bounded-context-builder';
+import {
+  MockLlmAdapter,
+  LlmTimeoutError,
+  LlmRateLimitError,
+  LlmMalformedOutputError,
+  LlmValidationError
+} from './llm/llm.adapter';
+
+
 async function runTestSuite() {
   console.log('Running Team SDE 8 TypeScript Test Suite...\n');
   let passed = 0;
@@ -360,6 +379,310 @@ async function runTestSuite() {
     assert(result.sourcesUsed.includes('synth-frame-dev-001'));
     assert(result.reasoningText.includes('TypeError') || result.reasoningText.includes('Defensive Null Guard'));
     assert(typeof result.executionDurationMs === 'number');
+  });
+
+  
+  // =========================================================================
+  // Week 2 (D8–9): Opt-in Capture Adapter & Guardrails
+  // =========================================================================
+  test('Week 2 Capture: Off by default (isOptedIn is false)', () => {
+    const adapter = new OptInCaptureAdapter();
+    assert.strictEqual(adapter.isOptedIn(), false);
+  });
+
+  test('Week 2 Capture: Throws CaptureNotOptedInError when unconsented capture is attempted', () => {
+    const adapter = new OptInCaptureAdapter();
+    assert.throws(
+      () => adapter.captureSyntheticFrame('DEV_VSCODE_ERROR'),
+      (err: any) => err instanceof CaptureNotOptedInError
+    );
+  });
+
+  test('Week 2 Capture: optIn() enables capture, optOut() disables it', () => {
+    const adapter = new OptInCaptureAdapter();
+    adapter.optIn();
+    assert.strictEqual(adapter.isOptedIn(), true);
+    const frame = adapter.captureSyntheticFrame('DEV_VSCODE_ERROR');
+    assert.strictEqual(frame.isSynthetic, true);
+    adapter.optOut();
+    assert.strictEqual(adapter.isOptedIn(), false);
+  });
+
+  test('Week 2 Capture: Throws RealScreenshotNotAllowedError if isSynthetic is false', () => {
+    const adapter = new OptInCaptureAdapter();
+    adapter.optIn();
+    assert.throws(
+      () => adapter.capture({
+        frameId: 'real-shot-001',
+        timestamp: Date.now(),
+        width: 1920,
+        height: 1080,
+        byteSize: 1024,
+        isSynthetic: false,
+        application: 'VS Code',
+        windowTitle: 'Secret Screen',
+        ocrContent: 'Confidential'
+      }),
+      (err: any) => err instanceof RealScreenshotNotAllowedError
+    );
+  });
+
+  test('Week 2 Capture: Throws FrameDimensionExceededError if frame exceeds max dimensions', () => {
+    const adapter = new OptInCaptureAdapter({ maxDimension: { width: 1920, height: 1080 } });
+    adapter.optIn();
+    assert.throws(
+      () => adapter.capture({
+        frameId: 'oversized-dim',
+        timestamp: Date.now(),
+        width: 3840,
+        height: 2160,
+        byteSize: 5000,
+        isSynthetic: true,
+        application: 'VS Code',
+        windowTitle: '4K Display',
+        ocrContent: 'Huge display'
+      }),
+      (err: any) => err instanceof FrameDimensionExceededError
+    );
+  });
+
+  test('Week 2 Capture: Throws FrameSizeExceededError if byte size exceeds maximum threshold', () => {
+    const adapter = new OptInCaptureAdapter({ maxByteSize: 1024 });
+    adapter.optIn();
+    assert.throws(
+      () => adapter.capture({
+        frameId: 'oversized-bytes',
+        timestamp: Date.now(),
+        width: 800,
+        height: 600,
+        byteSize: 2048,
+        isSynthetic: true,
+        application: 'VS Code',
+        windowTitle: 'Heavy Buffer',
+        ocrContent: 'Data'
+      }),
+      (err: any) => err instanceof FrameSizeExceededError
+    );
+  });
+
+  test('Week 2 Capture: Throws SamplingRateExceededError when frames captured faster than minSamplingIntervalMs', () => {
+    const adapter = new OptInCaptureAdapter({ minSamplingIntervalMs: 500 });
+    adapter.optIn();
+    adapter.captureSyntheticFrame('DEV_VSCODE_ERROR');
+    assert.throws(
+      () => adapter.captureSyntheticFrame('DEV_VSCODE_ERROR'),
+      (err: any) => err instanceof SamplingRateExceededError
+    );
+  });
+
+  // =========================================================================
+  // Week 2 (D8–9): OCR & Vision Adapter
+  // =========================================================================
+  await testAsync('Week 2 OCR/Vision: MockOcrVisionAdapter extracts structured lines, words & confidence', async () => {
+    const adapter = new OptInCaptureAdapter();
+    adapter.optIn();
+    const frame = adapter.captureSyntheticFrame('DEV_VSCODE_ERROR');
+    const ocrAdapter = new MockOcrVisionAdapter(5);
+    const ocrResult = await ocrAdapter.extractText(frame);
+
+    assert(ocrResult.fullText.includes('TypeError'));
+    assert(ocrResult.lines.length > 0);
+    assert(ocrResult.lines[0].words.length > 0);
+    assert(ocrResult.lines[0].confidence > 0.9);
+    assert.strictEqual(ocrResult.sourceFrameId, frame.frameId);
+  });
+
+  await testAsync('Week 2 OCR/Vision: MockOcrVisionAdapter detects application and structured UI elements', async () => {
+    const adapter = new OptInCaptureAdapter();
+    adapter.optIn();
+    const frame = adapter.captureSyntheticFrame('RESEARCH_PDF_ATTENTION');
+    const ocrAdapter = new MockOcrVisionAdapter(5);
+    const visionResult = await ocrAdapter.describeVision(frame);
+
+    assert.strictEqual(visionResult.detectedApplication, 'Acrobat PDF Reader');
+    assert(visionResult.elements.some(e => e.type === 'pdf_viewer'));
+    assert(visionResult.elements.some(e => e.type === 'text_block'));
+    assert(typeof visionResult.processingDurationMs === 'number');
+  });
+
+  // =========================================================================
+  // Week 2 (D10–11): Bounded Context Builder (Tokens, TTL decay & Greedy packing)
+  // =========================================================================
+  test('Week 2 Builder: Approximates token count at ~4 chars per token', () => {
+    const builder = new BoundedContextBuilder({ charsPerToken: 4 });
+    const text = '1234567890123456';
+    assert.strictEqual(builder.approximateTokens(text), 4);
+  });
+
+  test('Week 2 Builder: Stale filtering evicts items exceeding TTL (300s)', () => {
+    const builder = new BoundedContextBuilder({ ttlMs: 300_000 });
+    const now = Date.now();
+    const freshItem = {
+      id: 'fresh-01',
+      source: {
+        application: 'VS Code',
+        windowTitle: 'Editor',
+        capturedAt: new Date(now - 10_000).toISOString(),
+        isSynthetic: true
+      },
+      type: 'screen_ocr' as const,
+      content: 'Fresh context',
+      confidence: 1.0,
+      isSynthetic: true,
+      metadata: {}
+    };
+    const staleItem = {
+      id: 'stale-01',
+      source: {
+        application: 'VS Code',
+        windowTitle: 'Editor',
+        capturedAt: new Date(now - 400_000).toISOString(),
+        isSynthetic: true
+      },
+      type: 'screen_ocr' as const,
+      content: 'Stale context',
+      confidence: 1.0,
+      isSynthetic: true,
+      metadata: {}
+    };
+
+    assert.strictEqual(builder.isStale(freshItem, now), false);
+    assert.strictEqual(builder.isStale(staleItem, now), true);
+
+    const result = builder.buildBoundedContext([freshItem, staleItem], { referenceTimestamp: now });
+    assert.strictEqual(result.staleFilteredCount, 1);
+    assert.strictEqual(result.selectedCount, 1);
+    assert.strictEqual(result.selectedItems[0].id, 'fresh-01');
+  });
+
+  test('Week 2 Builder: Relevance and recency ranking prioritizes query-matching items', () => {
+    const builder = new BoundedContextBuilder();
+    const now = Date.now();
+    const itemTypeError = {
+      id: 'item-type-error',
+      source: { application: 'VS Code', windowTitle: 'auth.service.ts', capturedAt: new Date(now - 5000).toISOString(), isSynthetic: true },
+      type: 'screen_ocr' as const,
+      content: 'TypeError: Cannot read property token of undefined in auth.service.ts',
+      confidence: 1.0,
+      isSynthetic: true,
+      metadata: {}
+    };
+    const itemPdfDoc = {
+      id: 'item-pdf-doc',
+      source: { application: 'Acrobat', windowTitle: 'paper.pdf', capturedAt: new Date(now - 2000).toISOString(), isSynthetic: true },
+      type: 'screen_ocr' as const,
+      content: 'Methodology chapter on sample sizes and experimental controls',
+      confidence: 1.0,
+      isSynthetic: true,
+      metadata: {}
+    };
+
+    const result = builder.buildBoundedContext([itemPdfDoc, itemTypeError], {
+      query: 'TypeError undefined token fix',
+      referenceTimestamp: now
+    });
+
+    assert.strictEqual(result.selectedItems[0].id, 'item-type-error');
+  });
+
+  test('Week 2 Builder: Strict token budget truncates overflowing candidate items', () => {
+    const builder = new BoundedContextBuilder({ maxTokenBudget: 50, charsPerToken: 4 });
+    const now = Date.now();
+    const items = [
+      {
+        id: 'small-1',
+        source: { application: 'App', windowTitle: 'App Window', capturedAt: new Date(now).toISOString(), isSynthetic: true },
+        type: 'screen_ocr' as const,
+        content: 'Small text payload 1',
+        confidence: 1.0,
+        isSynthetic: true,
+        metadata: {}
+      },
+      {
+        id: 'large-2',
+        source: { application: 'App', windowTitle: 'App Window', capturedAt: new Date(now).toISOString(), isSynthetic: true },
+        type: 'screen_ocr' as const,
+        content: 'Very long content '.repeat(20),
+        confidence: 1.0,
+        isSynthetic: true,
+        metadata: {}
+      }
+    ];
+
+    const result = builder.buildBoundedContext(items, { referenceTimestamp: now });
+    assert.strictEqual(result.selectedCount, 1);
+    assert.strictEqual(result.budgetOmittedCount, 1);
+    assert(result.totalTokensApprox <= 50);
+  });
+
+  // =========================================================================
+  // Week 2 (D12–13): LLM Client Adapter (Timeout, Exponential Backoff & Validation)
+  // =========================================================================
+  await testAsync('Week 2 LLM: Executes structured output matching ReasoningResultSchema', async () => {
+    const adapter = new MockLlmAdapter();
+    const res = await adapter.generateStructured('What is this error and how do I fix it?', ReasoningResultSchema);
+
+    assert.strictEqual(res.metadata.isMock, true);
+    assert(res.data.requestId.startsWith('req-'));
+    assert.strictEqual(res.data.status, 'completed');
+    assert.strictEqual(res.data.intent, 'EXPLAIN_ERROR');
+    assert.strictEqual(res.data.riskLevel, 'A');
+    assert(res.data.reasoningText.includes('token') || res.data.reasoningText.includes('null'));
+  });
+
+  await testAsync('Week 2 LLM: Timeout triggers LlmTimeoutError within specified threshold', async () => {
+    const adapter = new MockLlmAdapter({ injectTimeout: true });
+    let caught: any = null;
+    try {
+      await adapter.generateStructured('Slow request', ReasoningResultSchema, { timeoutMs: 80, maxRetries: 0 });
+    } catch (err: any) {
+      caught = err;
+    }
+
+    assert(caught instanceof LlmTimeoutError);
+    assert(caught.message.includes('timed out after 80ms'));
+  });
+
+  await testAsync('Week 2 LLM: Exponential backoff retries transient failures and eventually succeeds', async () => {
+    const adapter = new MockLlmAdapter({ injectTransientFailures: 2, simulatedLatencyMs: 5 });
+    const res = await adapter.generateStructured('Transient error recovery', ReasoningResultSchema, {
+      maxRetries: 3,
+      initialBackoffMs: 10,
+      backoffMultiplier: 2
+    });
+
+    assert.strictEqual(res.metadata.attempts, 3);
+    assert.strictEqual(res.data.status, 'completed');
+  });
+
+  // =========================================================================
+  // Week 2 (D14): Malformed-Output & Schema Violation Tests
+  // =========================================================================
+  await testAsync('Week 2 Malformed Output: Non-JSON raw text throws LlmMalformedOutputError without retry', async () => {
+    const adapter = new MockLlmAdapter({ injectMalformedJson: true });
+    let caught: any = null;
+    try {
+      await adapter.generateStructured('Malformed payload query', ReasoningResultSchema, { maxRetries: 3 });
+    } catch (err: any) {
+      caught = err;
+    }
+
+    assert(caught instanceof LlmMalformedOutputError);
+    assert(caught.rawOutput.includes('<<<MALFORMED_OUTPUT>>>'));
+  });
+
+  await testAsync('Week 2 Malformed Output: Valid JSON violating Zod schema throws LlmValidationError with issues', async () => {
+    const adapter = new MockLlmAdapter({ injectSchemaViolation: true });
+    let caught: any = null;
+    try {
+      await adapter.generateStructured('Schema violation query', ReasoningResultSchema, { maxRetries: 3 });
+    } catch (err: any) {
+      caught = err;
+    }
+
+    assert(caught instanceof LlmValidationError);
+    assert(Array.isArray(caught.zodErrors));
+    assert(caught.zodErrors.length > 0);
   });
 
   console.log(`\nTest Results: ${passed}/${total} passed (${Math.round((passed / total) * 100)}%)\n`);
