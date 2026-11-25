@@ -78,13 +78,21 @@ export class ContextManager {
   }
 
   /**
-   * Sanitizes sensitive text (API keys, bearer tokens, passwords) to ensure privacy compliance.
+   * Sanitizes sensitive text (API keys, bearer tokens, passwords, emails, JWTs) to ensure privacy compliance.
+   * PRD Section 19: Masks sensitive data before it reaches the prompt or logs.
    */
   public sanitize(text: string): string {
     if (!text) return '';
     return text
+      // Redact OpenAI / Cloud API keys
       .replace(/(sk-[a-zA-Z0-9_\-]{20,})/g, '[REDACTED_API_KEY]')
+      // Redact Bearer authorization tokens
       .replace(/(Bearer\s+[a-zA-Z0-9_\-\.]{20,})/gi, 'Bearer [REDACTED_TOKEN]')
+      // Redact JWT tokens
+      .replace(/(eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})/g, '[REDACTED_JWT]')
+      // Redact email addresses
+      .replace(/([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/g, '[REDACTED_EMAIL]')
+      // Redact passwords and credentials
       .replace(/(password|passwd|secret|api_key)\s*[:=]\s*['"][^'"]+['"]/gi, '$1="[REDACTED]"');
   }
 

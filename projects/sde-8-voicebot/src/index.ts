@@ -15,3 +15,7 @@ export * from './grounding/grounded-reasoning.service';
 export * from './security/prompt-injection-guard';
 export * from './workflow-handoff/workflow-proposal.schema';
 export * from './workflow-handoff/workflow-handoff.adapter';
+export * from './telemetry/latency-tracker';
+export * from './golden/golden-test-set';
+export * from './golden/golden-evaluator';
+export * from './core/reasoning-pipeline';

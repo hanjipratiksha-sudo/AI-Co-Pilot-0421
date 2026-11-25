@@ -22,6 +22,9 @@ import {
 } from './capture/capture.adapter';
 import { MockOcrVisionAdapter } from './capture/ocr-vision.adapter';
 import { BoundedContextBuilder } from './builder/bounded-context-builder';
+import { GoldenEvaluator } from './golden/golden-evaluator';
+import { LatencyTracker } from './telemetry/latency-tracker';
+import { ReasoningPipeline } from './core/reasoning-pipeline';
 import { ObservationStore } from './observations/observation-store';
 import { GroundedReasoningService } from './grounding/grounded-reasoning.service';
 import { PromptInjectionGuard } from './security/prompt-injection-guard';
@@ -924,6 +927,109 @@ async function runTestSuite() {
     const resultApproved = await adapter.handoff(sensitiveProposal, { approveLevelC: true });
     assert.strictEqual(resultApproved.finalState, 'COMPLETED');
     assert.strictEqual(resultApproved.success, true);
+  });
+
+  
+  // =========================================================================
+  // Week 4 (D22–24): Golden Test Set Execution & Grounding Verification
+  // =========================================================================
+  await testAsync('Week 4 Golden Set: Executes 8 golden benchmark tests with 100% pass rate in CI', async () => {
+    const evaluator = new GoldenEvaluator();
+    const summary = await evaluator.evaluateAll();
+
+    assert.strictEqual(summary.totalTests, 8);
+    assert.strictEqual(summary.passedTests, 8);
+    assert.strictEqual(summary.failedTests, 0);
+    assert.strictEqual(summary.passRate, 100);
+    assert(summary.averageDurationMs >= 0);
+  });
+
+  // =========================================================================
+  // Week 4 (D25–27): Privacy & Redaction Tests (Emails, Tokens, Passwords)
+  // =========================================================================
+  test('Week 4 Privacy: Redacts emails before reaching prompt or logs', () => {
+    const cm = new ContextManager();
+    const leak = 'Contact admin at developer.alex@university.edu or support@internal-domain.org for access.';
+    const sanitized = cm.sanitize(leak);
+
+    assert(!sanitized.includes('developer.alex@university.edu'));
+    assert(!sanitized.includes('support@internal-domain.org'));
+    assert(sanitized.includes('[REDACTED_EMAIL]'));
+  });
+
+  test('Week 4 Privacy: Redacts JWT authentication tokens before reaching prompt or logs', () => {
+    const cm = new ContextManager();
+    const jwtSample = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const sanitized = cm.sanitize(jwtSample);
+
+    assert(!sanitized.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'));
+    assert(sanitized.includes('[REDACTED_TOKEN]') || sanitized.includes('[REDACTED_JWT]'));
+  });
+
+  // =========================================================================
+  // Week 4 (D25–27): Consent Revocation Invariant Test
+  // =========================================================================
+  test('Week 4 Consent: Withdrawing consent halts capture and purges stored context from RAM', () => {
+    const pipeline = new ReasoningPipeline();
+    const capture = pipeline.getCaptureAdapter();
+    const store = pipeline.getObservationStore();
+
+    // Enable and ingest
+    capture.optIn();
+    store.grantConsent();
+    const frame = capture.captureSyntheticFrame('DEV_VSCODE_ERROR');
+    const ingestRes = store.ingestFrame(frame);
+    assert.strictEqual(ingestRes.accepted, true);
+    assert(store.getObservationCount() > 0);
+
+    // Withdraw consent
+    capture.optOut();
+    store.withdrawConsent();
+
+    // Invariants
+    assert.strictEqual(capture.isOptedIn(), false);
+    assert.strictEqual(store.isConsentGranted(), false);
+    assert.strictEqual(store.getObservationCount(), 0);
+    assert.strictEqual(store.getObservations().length, 0);
+
+    // Any subsequent capture must fail
+    assert.throws(
+      () => capture.captureSyntheticFrame('DEV_VSCODE_ERROR'),
+      (err: any) => err instanceof CaptureNotOptedInError
+    );
+  });
+
+  // =========================================================================
+  // Week 4 (D25–27): Per-Stage Latency Instrumentation Tests
+  // =========================================================================
+  await testAsync('Week 4 Latency: Pipeline instruments and reports per-stage latency numbers', async () => {
+    const pipeline = new ReasoningPipeline();
+    pipeline.getCaptureAdapter().optIn();
+    pipeline.getObservationStore().grantConsent();
+
+    const candidate = pipeline.getCaptureAdapter().captureSyntheticFrame('DEV_VSCODE_ERROR');
+    const result = await pipeline.processRequest(
+      'Why is this application failing and what is the fix?',
+      candidate,
+      { sessionId: 'sess-latency-test' }
+    );
+
+    const s = result.latency.stages;
+    assert(s.captureStageMs >= 0);
+    assert(s.sanitizationStageMs >= 0);
+    assert(s.observationStoreStageMs >= 0);
+    assert(s.contextPackingStageMs >= 0);
+    assert(s.securityCheckStageMs >= 0);
+    assert(s.reasoningExecutionStageMs > 0);
+    assert(s.groundingVerificationStageMs >= 0);
+    assert(s.totalLatencyMs > 0);
+
+    // Verify report format
+    assert(result.latencyReport.includes('LATENCY BREAKDOWN'));
+    assert(result.latencyReport.includes('Capture & Bounding Stage:'));
+    assert(result.latencyReport.includes('Privacy & PII Redaction:'));
+    assert(result.latencyReport.includes('Reasoning Execution'));
+    assert(result.latencyReport.includes('TOTAL END-TO-END LATENCY:'));
   });
 
   console.log(`\nTest Results: ${passed}/${total} passed (${Math.round((passed / total) * 100)}%)\n`);
